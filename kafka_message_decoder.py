@@ -245,12 +245,78 @@ def decode_kafka_topic_data(data: bytes) -> Dict[str, Any]:
         }
 
 
+def parse_python_bytes_string(byte_string: str) -> bytes:
+    """
+    Parse Python byte string format like b'\x77hello\x00' into actual bytes
+    
+    Args:
+        byte_string: String in format like "b'\x77hello\x00'" or "\\x77hello\\x00"
+        
+    Returns:
+        Actual bytes object
+    """
+    # Remove b' prefix and ' suffix if present
+    if byte_string.startswith("b'") and byte_string.endswith("'"):
+        byte_string = byte_string[2:-1]
+    elif byte_string.startswith('b"') and byte_string.endswith('"'):
+        byte_string = byte_string[2:-1]
+    
+    # Handle escape sequences
+    result = b''
+    i = 0
+    while i < len(byte_string):
+        if byte_string[i] == '\\' and i + 1 < len(byte_string):
+            next_char = byte_string[i + 1]
+            if next_char == 'x' and i + 3 < len(byte_string):
+                # Handle \x## hex escape
+                try:
+                    hex_value = int(byte_string[i+2:i+4], 16)
+                    result += bytes([hex_value])
+                    i += 4
+                except ValueError:
+                    # Invalid hex, treat as literal
+                    result += byte_string[i].encode('latin-1')
+                    i += 1
+            elif next_char == 'n':
+                result += b'\n'
+                i += 2
+            elif next_char == 't':
+                result += b'\t'
+                i += 2
+            elif next_char == 'r':
+                result += b'\r'
+                i += 2
+            elif next_char == '\\':
+                result += b'\\'
+                i += 2
+            elif next_char == "'":
+                result += b"'"
+                i += 2
+            elif next_char == '"':
+                result += b'"'
+                i += 2
+            elif next_char == '0':
+                result += b'\x00'
+                i += 2
+            else:
+                # Unknown escape, treat as literal
+                result += byte_string[i].encode('latin-1')
+                i += 1
+        else:
+            # Regular character
+            result += byte_string[i].encode('latin-1')
+            i += 1
+    
+    return result
+
+
 def analyze_topic_dump_format(data: bytes) -> None:
     """
     Analyze and print information about topic data format
     """
     print(f"Data length: {len(data)} bytes")
-    print(f"First 32 bytes: {data[:32].hex()}")
+    print(f"First 32 bytes (hex): {data[:32].hex()}")
+    print(f"Python bytes format: {repr(data[:32])}")
     
     if len(data) >= 20:
         print("\nPossible interpretations:")
@@ -311,10 +377,18 @@ if __name__ == "__main__":
                 analyze_topic_dump_format(data)
             except Exception as e:
                 print(f"Error reading file: {e}")
+        elif sys.argv[1].startswith("b'") or sys.argv[1].startswith('b"') or '\\x' in sys.argv[1]:
+            # Treat as Python bytes string format
+            try:
+                data = parse_python_bytes_string(sys.argv[1])
+                print(f"Analyzing Python bytes string: {sys.argv[1][:50]}...")
+                analyze_topic_dump_format(data)
+            except Exception as e:
+                print(f"Error parsing Python bytes string: {e}")
         else:
             # Treat as hex string
             try:
-                hex_str = sys.argv[1].replace(' ', '').replace('\\x', '')
+                hex_str = sys.argv[1].replace(' ', '')
                 data = bytes.fromhex(hex_str)
                 print(f"Analyzing hex data: {hex_str[:32]}...")
                 analyze_topic_dump_format(data)
@@ -324,10 +398,13 @@ if __name__ == "__main__":
         print("Usage:")
         print("  python kafka_message_decoder.py <file.bin>")
         print("  python kafka_message_decoder.py <hex_string>")
+        print("  python kafka_message_decoder.py <python_bytes_string>")
         print()
         print("Examples:")
         print("  python kafka_message_decoder.py topic_dump.bin")
         print("  python kafka_message_decoder.py 087f001200000000")
+        print("  python kafka_message_decoder.py \"b'\\x77hello\\x00'\"")
+        print("  python kafka_message_decoder.py \"\\x08\\x7fhello world\\x00\"")
         print()
         print("Note: If you're trying to decode wire protocol messages")
         print("(client-broker communication), use kafka_protocol_decoder.py instead.")
