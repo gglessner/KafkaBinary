@@ -44,17 +44,92 @@ def explain_kafka_data_types():
     print()
 
 
-def analyze_data_type(data_hex):
+def parse_python_bytes_string(byte_string: str) -> bytes:
+    """
+    Parse Python byte string format like b'\x77hello\x00' into actual bytes
+    (Same function as in kafka_message_decoder.py)
+    """
+    # Remove b' prefix and ' suffix if present
+    if byte_string.startswith("b'") and byte_string.endswith("'"):
+        byte_string = byte_string[2:-1]
+    elif byte_string.startswith('b"') and byte_string.endswith('"'):
+        byte_string = byte_string[2:-1]
+    
+    # Handle escape sequences
+    result = b''
+    i = 0
+    while i < len(byte_string):
+        if byte_string[i] == '\\' and i + 1 < len(byte_string):
+            next_char = byte_string[i + 1]
+            if next_char == 'x' and i + 3 < len(byte_string):
+                # Handle \x## hex escape
+                try:
+                    hex_value = int(byte_string[i+2:i+4], 16)
+                    result += bytes([hex_value])
+                    i += 4
+                except ValueError:
+                    # Invalid hex, treat as literal
+                    result += byte_string[i].encode('latin-1')
+                    i += 1
+            elif next_char == 'n':
+                result += b'\n'
+                i += 2
+            elif next_char == 't':
+                result += b'\t'
+                i += 2
+            elif next_char == 'r':
+                result += b'\r'
+                i += 2
+            elif next_char == '\\':
+                result += b'\\'
+                i += 2
+            elif next_char == "'":
+                result += b"'"
+                i += 2
+            elif next_char == '"':
+                result += b'"'
+                i += 2
+            elif next_char == '0':
+                result += b'\x00'
+                i += 2
+            else:
+                # Unknown escape, treat as literal
+                result += byte_string[i].encode('latin-1')
+                i += 1
+        else:
+            # Regular character
+            result += byte_string[i].encode('latin-1')
+            i += 1
+    
+    return result
+
+
+def analyze_data_type(data_input):
     """Analyze data to suggest which decoder to use"""
     
-    try:
-        data = bytes.fromhex(data_hex.replace(' ', '').replace('\\x', ''))
-    except ValueError:
-        print("Error: Invalid hex string")
-        return
+    # Determine input format and parse accordingly
+    if data_input.startswith("b'") or data_input.startswith('b"') or '\\x' in data_input:
+        # Python bytes string format
+        try:
+            data = parse_python_bytes_string(data_input)
+            input_type = "Python bytes string"
+        except Exception:
+            print("Error: Invalid Python bytes string format")
+            return
+    else:
+        # Hex string format
+        try:
+            data = bytes.fromhex(data_input.replace(' ', ''))
+            input_type = "Hex string"
+        except ValueError:
+            print("Error: Invalid hex string")
+            return
     
-    print(f"Analyzing: {data_hex[:32]}...")
+    print(f"Analyzing: {data_input[:50]}...")
+    print(f"Input type: {input_type}")
     print(f"Length: {len(data)} bytes")
+    print(f"Hex representation: {data[:16].hex()}{'...' if len(data) > 16 else ''}")
+    print(f"Python bytes format: {repr(data[:32])}")
     print()
     
     if len(data) < 4:
@@ -137,8 +212,12 @@ def analyze_data_type(data_hex):
     
     # Show commands to try
     print("COMMANDS TO TRY:")
-    print(f"python kafka_protocol_decoder.py # Add your data")
-    print(f"python kafka_message_decoder.py {data_hex}")
+    if input_type == "Python bytes string":
+        print(f"python kafka_message_decoder.py \"{data_input}\"")
+        print(f"python kafka_protocol_decoder.py # Convert to hex first: {data.hex()}")
+    else:
+        print(f"python kafka_protocol_decoder.py # Add your data")
+        print(f"python kafka_message_decoder.py {data_input}")
     print(f"python process_binary_file.py <your_file.bin>")
 
 
@@ -216,12 +295,15 @@ if __name__ == "__main__":
         print("=" * 35)
         print()
         print("Usage:")
-        print("  python what_decoder.py explain      # Explain data types")
-        print("  python what_decoder.py interactive  # Interactive help")
-        print("  python what_decoder.py <hex_data>   # Analyze specific data")
+        print("  python what_decoder.py explain          # Explain data types")
+        print("  python what_decoder.py interactive      # Interactive help")
+        print("  python what_decoder.py <hex_data>       # Analyze hex data")
+        print("  python what_decoder.py <python_bytes>   # Analyze Python bytes")
         print()
         print("Examples:")
         print("  python what_decoder.py 087f0012000000003039")
+        print("  python what_decoder.py \"b'\\x08\\x7fhello\\x00'\"")
+        print("  python what_decoder.py \"\\x08\\x7fhello world\\x00\"")
         print("  python what_decoder.py interactive")
         print()
         print("Quick Guide:")

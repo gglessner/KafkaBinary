@@ -5,11 +5,14 @@ A low-level Python decoder for Apache Kafka's binary wire protocol, implemented 
 ## Features
 
 - **Complete Protocol Primitive Support**: All Kafka protocol primitive types (INT8, INT16, INT32, INT64, STRING, BYTES, VARINT, etc.)
+- **Dual Decoder Architecture**: Separate decoders for wire protocol vs topic message content
 - **Version-Aware Decoding**: Supports different API versions and protocol evolution
 - **Tagged Fields Support**: Handles KIP-482 tagged fields for newer protocol versions
 - **Kafka Binary Detection**: Intelligent detection of Kafka protocol data with confidence scoring
+- **Multiple Input Formats**: Supports hex strings, Python bytes strings, and binary files
 - **Comprehensive Error Handling**: Detailed error messages for malformed data
 - **File Processing Tools**: Ready-to-use scripts for analyzing binary files
+- **Interactive Analysis**: Command-line tools with smart format detection
 - **Extensible Design**: Easy to add support for new message types
 
 ## Supported Protocol Elements
@@ -23,10 +26,14 @@ A low-level Python decoder for Apache Kafka's binary wire protocol, implemented 
 - **Other**: UUID, TAGGED_FIELDS
 
 ### Message Structures
-- Request/Response headers (all versions)
-- Record batch headers
-- API versioning support
-- Error code mappings
+- **Wire Protocol**: Request/Response headers, API versioning, error codes
+- **Topic Messages**: Message sets (v0/v1), record batches (v2+), keys/values
+- **Content Analysis**: JSON detection, UTF-8 strings, numeric types
+
+### Input Formats
+- **Hex Strings**: `087f68656c6c6f00`
+- **Python Bytes**: `b'\x08\x7fhello\x00'`, `"\x08\x7fhello\x00"`
+- **Binary Files**: `.bin`, `.log`, network captures
 
 ## Installation
 
@@ -63,11 +70,28 @@ print(f"Confidence: {result['confidence']}")    # 1.00
 print(f"API Key: {result['detected_api_key']}")  # 18
 ```
 
+### Topic Message Decoding
+```python
+from kafka_message_decoder import decode_kafka_topic_data
+
+# Decode topic message content (keys/values)
+topic_data = b'\x08\x7fhello world\x00'
+decoded = decode_kafka_topic_data(topic_data)
+print(f"Format: {decoded['format']}")
+```
+
 ### File Processing
 ```python
 # Process binary files containing Kafka data
 python process_binary_file.py kafka_capture.bin
 python process_binary_file.py kafka_dump.bin multiple
+```
+
+### Format Detection
+```python
+# Auto-detect data type and get recommendations
+python what_decoder.py "b'\x08\x7fhello\x00'"
+python what_decoder.py 087f68656c6c6f00
 ```
 
 ## Detailed Usage
@@ -171,13 +195,24 @@ Common error scenarios:
 
 ## Examples
 
-### Processing Binary Files
+### Processing Different Input Formats
 
-```python
-# Single message analysis
-python process_binary_file.py kafka_message.bin
+```bash
+# Wire protocol analysis
+python kafka_protocol_decoder.py  # Interactive mode
+python process_binary_file.py protocol_capture.bin
 
-# Multiple message analysis  
+# Topic message analysis  
+python kafka_message_decoder.py topic_dump.bin
+python kafka_message_decoder.py "b'\x08\x7fhello\x00'"
+python kafka_message_decoder.py 087f68656c6c6f00
+
+# Format detection and recommendations
+python what_decoder.py "b'\x08\x7fhello\x00'"
+python what_decoder.py explain
+python what_decoder.py interactive
+
+# Multiple message analysis
 python process_binary_file.py kafka_log.bin multiple
 
 # Create test samples
@@ -186,12 +221,16 @@ python process_binary_file.py sample
 
 ### Detection Testing
 
-```python
-# Interactive hex string testing
+```bash
+# Interactive testing with multiple formats
 python test_kafka_detection.py interactive
 
 # Automated detection tests
 python test_kafka_detection.py
+
+# Byte order debugging
+python debug_byte_order.py interactive
+python debug_byte_order.py "087f0012000000003039"
 ```
 
 ### Analyzing Network Captures
@@ -238,8 +277,15 @@ python test_decoder.py
 # Run Kafka detection tests
 python test_kafka_detection.py
 
-# Interactive testing with hex strings
+# Interactive testing with multiple formats
 python test_kafka_detection.py interactive
+python what_decoder.py interactive
+
+# Test topic message decoding
+python kafka_message_decoder.py "b'\x08\x7fhello\x00'"
+
+# Debug byte order issues
+python debug_byte_order.py interactive
 
 # Run example demonstrations
 python example_usage.py
@@ -266,13 +312,32 @@ The decoder is designed for extensibility:
 
 ## Project Files
 
-- **`kafka_protocol_decoder.py`** - Main decoder library with detection function
-- **`process_binary_file.py`** - Command-line tool for processing binary files  
+### Core Decoders
+- **`kafka_protocol_decoder.py`** - Wire protocol decoder (client↔broker communication)
+- **`kafka_message_decoder.py`** - Topic message decoder (keys/values from topics)
+
+### Analysis Tools  
+- **`what_decoder.py`** - Smart format detection and decoder recommendations
+- **`process_binary_file.py`** - Command-line tool for processing binary files
+- **`debug_byte_order.py`** - Byte order debugging and endianness fixes
+
+### Testing & Examples
 - **`test_kafka_detection.py`** - Comprehensive detection testing suite
+- **`test_decoder.py`** - Core decoder test suite  
 - **`example_usage.py`** - Usage examples and demonstrations
-- **`test_decoder.py`** - Core decoder test suite
+
+### Documentation
 - **`README.md`** - This documentation
 - **`LICENSE`** - GNU GPL v3 license
+
+## Data Type Guide
+
+| Data Source | Use This Decoder | Example Data |
+|-------------|------------------|--------------|
+| **Network captures** (tcpdump, Wireshark) | `kafka_protocol_decoder.py` | `00000008 0012 0000...` |
+| **Topic dumps** (kafka-console-consumer) | `kafka_message_decoder.py` | `087f0012 68656c6c6f...` |  
+| **Log segments** (.log files) | `kafka_message_decoder.py` | Large offsets + message data |
+| **Unknown format** | `what_decoder.py` | Auto-detects and recommends |
 
 ## Author
 
